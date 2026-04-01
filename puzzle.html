@@ -282,6 +282,18 @@ body::before{
 .firebase-note{text-align:center;font-size:11px;color:#bbb;margin-top:10px}
 .modal-footer{display:flex;gap:8px;justify-content:center;margin-top:16px}
 
+/* ── Image reveal overlay ── */
+@keyframes fadeInOv{from{opacity:0}to{opacity:1}}
+#imgReveal img{box-shadow:0 12px 40px rgba(0,0,0,.6)}
+
+/* ── Image name tag ── */
+.img-name-tag{
+  display:inline-block;background:#f0f8ff;color:var(--blue);
+  border:1.5px solid var(--blue-l);border-radius:20px;
+  font-size:12px;font-weight:700;padding:3px 12px;
+  margin-bottom:10px;
+}
+
 /* ── Confetti ── */
 #confetti{position:fixed;inset:0;pointer-events:none;z-index:999;overflow:hidden}
 .cp{position:absolute;opacity:0;animation:cfall linear forwards}
@@ -373,6 +385,10 @@ body::before{
         <span>تقدّمك</span><span id="progTxt">0 / 9</span>
       </div>
       <div class="progress-bar"><div class="progress-fill" id="progFill" style="width:0%"></div></div>
+    </div>
+
+    <div style="text-align:center;margin-bottom:8px;">
+      <span class="img-name-tag" id="imgNameLabel">جاري التحميل…</span>
     </div>
 
     <div class="puzzle-area">
@@ -485,11 +501,15 @@ const ROLES    = { student:'طالب', teacher:'معلم', visitor:'زائر' };
 const MEDALS   = ['🥇','🥈','🥉'];
 const CC       = ['#f5c842','#4a7fa5','#2ecc71','#e74c3c','#9b59b6','#e67e22','#1abc9c','#3498db','#e91e63'];
 
-// 9-piece mosaic colors (3×3). Together they form the "image".
-const PCOLS = [
-  ['#FF6B6B','#FFE66D','#4ECDC4'],
-  ['#A8E6CF','#6C5CE7','#FF8B94'],
-  ['#FDCB6E','#74B9FF','#00CEC9']
+// Real images – kid-friendly (Unsplash, stable IDs, 234×234 crop)
+const PUZZLE_IMGS = [
+  { url: 'https://images.unsplash.com/photo-1485827404703-89b55fcc595e?w=234&h=234&fit=crop&auto=format', name: 'روبوت ذكي 🤖' },
+  { url: 'https://images.unsplash.com/photo-1552053831-71594a27632d?w=234&h=234&fit=crop&auto=format', name: 'كلب لطيف 🐕' },
+  { url: 'https://images.unsplash.com/photo-1574158622682-e7f5b27b8cc9?w=234&h=234&fit=crop&auto=format', name: 'قطة جميلة 🐱' },
+  { url: 'https://images.unsplash.com/photo-1552728089-57bdde30beb3?w=234&h=234&fit=crop&auto=format', name: 'ببغاء ملون 🦜' },
+  { url: 'https://images.unsplash.com/photo-1446776811953-b23d57bd21aa?w=234&h=234&fit=crop&auto=format', name: 'الكرة الأرضية 🌍' },
+  { url: 'https://images.unsplash.com/photo-1564349683136-77e08dba1ef7?w=234&h=234&fit=crop&auto=format', name: 'الباندا 🐼' },
+  { url: 'https://images.unsplash.com/photo-1551189014-fe516d5e2a5a?w=234&h=234&fit=crop&auto=format', name: 'فراشة ملونة 🦋' },
 ];
 
 /* ══════════════════════════════════════════
@@ -503,7 +523,8 @@ let piecesData = [];  // [{ id(=grid idx), number, colorR, colorC, used }]
 let dragId  = null;   // HTML5 drag
 let touchSt = null;   // touch drag state
 let allScores = [], lbFilter = 'all';
-let puzzleImg = null; // canvas data URL (234×234)
+let puzzleImg  = '';   // URL of current puzzle image
+let puzzleImgName = ''; // display name of current image
 
 /* ══════════════════════════════════════════
    WELCOME
@@ -532,7 +553,7 @@ function startGame() {
   document.getElementById('metaPlayer').textContent = playerName;
   const dt = document.getElementById('metaDiff');
   dt.textContent = LABELS[difficulty]; dt.className = `diff-tag ${difficulty}`;
-  puzzleImg = buildPuzzleImage();
+  pickImage();
   showScreen('s-game');
   newGame();
 }
@@ -548,48 +569,19 @@ function showScreen(id) {
 }
 
 /* ══════════════════════════════════════════
-   PUZZLE IMAGE  (canvas 234×234)
+   PUZZLE IMAGE – pick a real image from the list
 ══════════════════════════════════════════ */
-function buildPuzzleImage() {
-  const SZ = 234, CELL = 78;
-  const c  = document.createElement('canvas');
-  c.width = c.height = SZ;
-  const ctx = c.getContext('2d');
-
-  // Fill each 78×78 cell with its mosaic color
-  for (let r = 0; r < 3; r++)
-    for (let cl = 0; cl < 3; cl++) {
-      ctx.fillStyle = PCOLS[r][cl];
-      ctx.fillRect(cl*CELL, r*CELL, CELL, CELL);
-    }
-
-  // Subtle circle overlay per cell
-  ctx.globalAlpha = 0.15;
-  ctx.fillStyle   = '#fff';
-  for (let r = 0; r < 3; r++)
-    for (let cl = 0; cl < 3; cl++) {
-      ctx.beginPath();
-      ctx.arc(cl*CELL+39, r*CELL+39, 24, 0, Math.PI*2);
-      ctx.fill();
-    }
-  ctx.globalAlpha = 1;
-
-  // Math symbols in each cell
-  const syms = ['+','×','÷','−','=','²','√','%','∞'];
-  ctx.font = 'bold 22px Arial';
-  ctx.fillStyle = 'rgba(255,255,255,0.55)';
-  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-  for (let i = 0; i < 9; i++)
-    ctx.fillText(syms[i], (i%3)*CELL+39, Math.floor(i/3)*CELL+39);
-
-  // Grid dividers
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 2;
-  [CELL,CELL*2].forEach(x => {
-    ctx.beginPath(); ctx.moveTo(x,0); ctx.lineTo(x,SZ); ctx.stroke();
-    ctx.beginPath(); ctx.moveTo(0,x); ctx.lineTo(SZ,x); ctx.stroke();
-  });
-
-  return c.toDataURL();
+function pickImage() {
+  const choice  = PUZZLE_IMGS[Math.floor(Math.random() * PUZZLE_IMGS.length)];
+  puzzleImg     = choice.url;
+  puzzleImgName = choice.name;
+  // Preload so CSS shows it immediately
+  const preload = new Image();
+  preload.crossOrigin = 'anonymous';
+  preload.src = puzzleImg;
+  // Update label if game screen is showing
+  const lbl = document.getElementById('imgNameLabel');
+  if (lbl) lbl.textContent = puzzleImgName;
 }
 
 /* ══════════════════════════════════════════
@@ -803,10 +795,53 @@ function handleWin() {
   setMsg('🎉 رائع! اكتملت الصورة!', 'ok');
   launchConfetti();
   saveScore(timeTaken);
-  setTimeout(() => showResult(true, timeTaken), 1500);
+  showImageReveal(timeTaken);
+}
+
+function showImageReveal(timeTaken) {
+  const overlay = document.createElement('div');
+  overlay.id = 'imgReveal';
+  overlay.style.cssText = `
+    position:fixed;inset:0;background:rgba(0,0,0,.82);
+    display:flex;flex-direction:column;align-items:center;
+    justify-content:center;z-index:500;padding:20px;
+    animation:fadeInOv .4s ease;cursor:pointer;
+  `;
+  overlay.innerHTML = `
+    <div style="text-align:center;">
+      <div style="font-size:26px;color:#fff;font-weight:900;
+                  font-family:Tajawal,sans-serif;margin-bottom:14px;">
+        🎉 اكتملت الصورة!
+      </div>
+      <img src="${puzzleImg}"
+           style="width:234px;height:234px;border-radius:14px;
+                  border:4px solid #f5c842;display:block;margin:0 auto;
+                  animation:popIn .5s ease;object-fit:cover;"
+           alt="${puzzleImgName}">
+      <div style="color:#fde98a;font-size:18px;margin-top:12px;
+                  font-family:Tajawal,sans-serif;font-weight:700;">
+        ${puzzleImgName}
+      </div>
+      <div style="color:rgba(255,255,255,.6);font-size:13px;
+                  margin-top:6px;font-family:Tajawal,sans-serif;">
+        الوقت: ${timeTaken} ثانية
+      </div>
+      <div style="color:rgba(255,255,255,.4);font-size:12px;
+                  margin-top:16px;font-family:Tajawal,sans-serif;">
+        اضغط في أي مكان للمتابعة
+      </div>
+    </div>`;
+  overlay.addEventListener('click', () => {
+    overlay.remove();
+    showResult(true, timeTaken);
+  });
+  document.body.appendChild(overlay);
+  // Auto-dismiss after 5 seconds
+  setTimeout(() => { overlay.remove(); showResult(true, timeTaken); }, 5000);
 }
 function newGame() {
   stopTimer(); placed = 0; gameOver = false;
+  pickImage();
   generatePuzzle(); renderDropGrid(); renderPieces(); updateProgress();
   setMsg('',''); startTimer();
 }
